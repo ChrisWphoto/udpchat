@@ -20,6 +20,7 @@ using namespace std;
 SOCKET theSocket;
 int notused = 0;
 bool wait = true;
+string username = "";
 //global which will be updated by secondary thread
 vector<string> recMsgs;
 
@@ -85,7 +86,7 @@ void l1(void * notused){
 			try{
 				server_reply[recv_size] = '\0'; //null terminator
 				string* headerAndMsg = deCrypt(server_reply);
-				std::cout << std::endl << "Acknowledgement: " << headerAndMsg[0] << endl << headerAndMsg[1] << endl;
+				std::cout << std::endl << "Acknowledgement: "  << headerAndMsg[0] << endl << headerAndMsg[1] << endl;
 				if (wait == true) wait = !wait;
 			}
 			catch (...){
@@ -164,7 +165,17 @@ int main(int argc, char *argv[]){
 		std::cin >> req;
 
 		//quit
-		if (req == 'q') break;
+		if (req == 'q') {
+			//Send user info to server
+			string sMsg = to_string(randMsgNum) + ";3;" + crypt(username);
+			message = const_cast<char*>(sMsg.c_str());
+
+			if (sendto(theSocket, message, strlen(message), 0, (struct sockaddr*)&server, sizeof(server)) < 0)	{
+				cout << "Send Failed" << endl;
+				return 1;
+			}
+
+		}
 
 		//Send Dialog 
 		if (req == 's'){

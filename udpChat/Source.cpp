@@ -14,6 +14,8 @@ UDPEchoClient.cpp
 #include <vector>
 #include <thread>
 #include <process.h>
+#include <concrt.h>
+#include <limits>
 #pragma comment(lib, "Ws2_32") 
 
 using namespace std;
@@ -21,8 +23,9 @@ SOCKET theSocket;
 int notused = 0;
 bool wait = true;
 string username = "";
-//global which will be updated by secondary thread
-vector<string> recMsgs;
+int randMsgNum;
+WSADATA wsa;
+struct sockaddr_in server;
 
 /*
 encryption function
@@ -69,12 +72,13 @@ string* deCrypt(char* msg){
 	return rMsg;
 }
 
-
+/*
+	Second thread for listening for incoming messages
+		this will also reply automatically for keep alive messages
+*/
 void l1(void * notused){	
 	int recv_size;
 	char server_reply[65000];
-
-	
 
 	while (true){
 		//Receive a reply from the server	
@@ -84,8 +88,20 @@ void l1(void * notused){
 		}
 		else {
 			try{
+
 				server_reply[recv_size] = '\0'; //null terminator
 				string* headerAndMsg = deCrypt(server_reply);
+
+				//keep alive msg  ack;msg#;myName
+				if (server_reply[4] == '4'){
+					std::cout << "Telling Server you are active" << std::endl;
+					string sMsg = "ack;" + to_string(randMsgNum) + "; " + crypt(username);
+
+					if (sendto(theSocket, sMsg.c_str(), strlen(sMsg.c_str()), 0, (struct sockaddr*)&server, sizeof(server)) < 0)	{
+						cout << "Send Failed" << endl;
+					}
+				}
+
 				std::cout << std::endl << "Acknowledgement: "  << headerAndMsg[0] << endl << headerAndMsg[1] << endl;
 				if (wait == true) wait = !wait;
 			}
@@ -98,20 +114,13 @@ void l1(void * notused){
 }
 
 
-
 int main(int argc, char *argv[]){
 	srand(time(NULL));
 	int min = 10000;
-	int randMsgNum = (rand() % (RAND_MAX - min) + min);
+	randMsgNum = (rand() % (RAND_MAX - min) + min);
 
-
-	//Server Vars
-	WSADATA wsa;
-	struct sockaddr_in server;
-	char *message, server_reply[500];
-	int recv_size;
-
-
+	char *message;
+	
 	std::cout << "Initialising Winsock...." << endl;
 	if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0)	{
 		printf("Failed. Error Code : %d", WSAGetLastError());		return 1;
@@ -122,9 +131,9 @@ int main(int argc, char *argv[]){
 		printf("Could not create socket : %d", WSAGetLastError());
 	}
 	std::cout << "socket created" << endl;
-	server.sin_addr.s_addr = inet_addr("204.76.188.23");
+	server.sin_addr.s_addr = inet_addr("192.168.1.114");
 	server.sin_family = AF_INET;
-	server.sin_port = htons(23456);
+	server.sin_port = htons(8080);
 	std::cout << "IP: 204.76.188.23 Port: 23456" << endl;
 	std::cout << "Starting MSG number: " << randMsgNum << endl;
 
@@ -156,16 +165,16 @@ int main(int argc, char *argv[]){
 			
 			_beginthread(l1, 0, (void *)  notused);
 			while (wait);
-
 		}
 
 		//Display user menu
-		char req;
-		cout << "Enter q (for quit), s (send msg), or c (check for msgs): ";
-		std::cin >> req;
-
-		//quit
-		if (req == 'q') {
+		std::cin.clear();
+		string req;
+		cout << "Enter q (for quit) or s (send msg)";
+		cin >> req;
+		
+		//quit server
+		if (req[0] == 'q') {
 			//Send user info to server
 			string sMsg = to_string(randMsgNum) + ";3;" + crypt(username);
 			message = const_cast<char*>(sMsg.c_str());
@@ -174,11 +183,10 @@ int main(int argc, char *argv[]){
 				cout << "Send Failed" << endl;
 				return 1;
 			}
-
 		}
 
 		//Send Dialog 
-		if (req == 's'){
+		if (req[0] == 's'){
 			cout << "Enter Buddy Name: ";
 			string buddy;
 			cin >> buddy;
@@ -202,22 +210,8 @@ int main(int argc, char *argv[]){
 			}
 			
 		}
-
-
-		if (req == 'c'){
-			//Send some data	
-			string sMsg = to_string(randMsgNum++) + ";1;" + crypt(username);
-			message = const_cast<char*>(sMsg.c_str());
-
-			if (sendto(theSocket, message, strlen(message), 0, (struct sockaddr*)&server, sizeof(server)) < 0)	{
-				cout << "Send Failed" << endl;
-				return 1;
-			}
-			cout << "Msg Sent" << endl;
-		}
-
 		
-
+		cin.ignore(100, '\n');
 	}
 
 	closesocket(theSocket);
